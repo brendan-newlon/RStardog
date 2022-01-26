@@ -1,0 +1,576 @@
+---
+title: "R Functions for Stardog"
+author: "Brendan Newlon"
+date: "12/1/2021"
+output: html_document
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+source_packages = function(pkgs, lib = .libPaths()[[1]], repos='http://cran.us.r-project.org') {
+  new.pkgs = pkgs[!(pkgs %in% installed.packages()[, "Package"])]
+  if (length(new.pkgs)){
+    install.packages(new.pkgs, dependencies = T, lib = lib, repos=repos)
+    }
+  sapply(pkgs, require, character.only = T)
+}
+
+source_packages(c("knitr", "keyring", "SPARQL", "magrittr", "readr", "stringr", "rlang", "httr", "jsonlite"))
+knitr::opts_chunk$set(echo = TRUE)
+as.df = function(x)as.data.frame(x,strings.as.factors=F)
+`%notin%` =Negate(`%in%`)
+fix_json_encoding = function(x){x = gsub("\\\\u003d", "=" , x ) ; x }
+```
+# Start/Stop a Stardog server
+
+These require that you have added the location of your Stardog /bin
+directory to the system's PATH environment variable. (This version is
+only for servers on localhost).
+
+-   `start_stardog()`
+
+-   `stop_stardog()`
+
+```{r server, echo=FALSE, include=F}
+start_stardog = function(server = "localhost"){
+  if(server == "localhost"){  
+    cat("Starting Stardog server on Localhost. \nThis may take a couple of minutes...\n") ; 
+    stdout = suppressWarnings(
+      system2(command = "cmd", args = c("/c", "stardog-admin server start"), wait = F, invisible = F, minimized = F, stdout = T, timeout = 10) 
+    ) ; 
+    cat("Started!\n")
+    cat(stdout) 
+  }## Remote handling TBD
+}
+stardog_start = function(){start_stardog}
+# start_stardog()
+
+##___________________## 
+stop_stardog = function(server = "localhost"){
+  if(server == "localhost"){ 
+    cat("Stopping Stardog server on Localhost...\n") ; stdout = system2(command = "stardog-admin", args = c("server stop"), wait = F, invisible = F, minimized = F, stdout = T) ; 
+    cat(stdout) 
+  } ## Remote handling TBD
+}
+stardog_stop = function(){stop_stardog}
+# stop_stardog()
+```
+
+```{r}
+start_stardog()
+```
+
+# Secure credential handling
+
+The function `handle_keys()` works behind the scenes to use the secure
+credential store on your OS for connection details including passwords.
+
+You'll be prompted to enter your password the first time you connect to
+an endpoint with your username, but after that, your OS will manage
+authentication silently. The function provides the option to delete
+stored credentials from the system's secure credential store at any
+time.
+
+```{r echo=FALSE, include=F}
+handle_keys = function(con_service = con_service, Username = "", clear_keys = F, as_password = F){
+  # Establish username 
+  if (!exists("Username") || Username == "" || is_empty(Username)) { 
+    Username <- readline(prompt="Enter username: ") 
+  } 
+  if (!exists("Username") || Username == "" || is_empty(Username)) { 
+    stop("Please try again with a valid username. ") 
+  } 
+  if(clear_keys){ 
+    if (con_service %in% key_list(con_service)$service)  { 
+      # Delete password 
+      key_delete(service = con_service, username = Username) 
+    }  
+  } 
+  # Ask for password if not already stored 
+  if (!con_service %in% key_list(con_service)$service || !Username %in% key_list(con_service)$username)  { 
+    if(Username == "anonymous"){
+      key_set_with_value(service = con_service, username = Username,password = "anonymous") } else {
+    # Store pasword securely 
+    key_set(service = con_service, username = Username) 
+    }
+  }  
+  if(as_password){return(key_get(service = con_service, username = Username))}
+}
+```
+
+# Query Stardog
+
+`stardog()` is a wrapper function that uses the SPARQL library to query
+a Stardog endpoint.
+
+```{r stardog, echo=FALSE}
+# Note: This is a work-in-progress, please ignore the graph argument and specify FROM NAMED or GRAPH within the query text instead
+stardog = function(
+  server = "My_Localhost", 
+  endpoint = "http://localhost:5820", 
+  db = "stardog-tutorial-music", 
+  graph = "", ## ignore this arg
+  query = 'select * {?s ?p ?o} limit 10', 
+  reasoning = F,
+  Username = "admin", 
+  include_namespaces = F, 
+  clear_keys = F
+){
+  con_service = paste0("stardog_",server)
+  handle_keys(con_service = con_service, Username = Username, clear_keys = clear_keys, as_password = F)
+  sd_url = paste0(endpoint, paste0("/", db,graph, "/query/") %>% gsub("//","/",.))
+  if(reasoning){sd_url = paste0(sd_url, "reasoning/")}
+  sparql.result <- SPARQL(
+    url = sd_url,
+    query =  query,
+    curl_args=c('userpwd'=paste0(Username,':',key_get(service = con_service, username = Username)))
+  ) 
+  if(!include_namespaces) { sparql.result = sparql.result %>% .[["results"]]}
+  sparql.result
+}
+```
+
+#### Example: Query Stardog on localhost
+
+You'll be prompted for a password the first time, but successive queries
+from the same username to the same endpoint will retrieve the password
+from your system's secure credential store.
+
+-   **The default password is `admin`**
+
+```{r}
+results = stardog(
+  query = 'select * {?s ?p ?o} limit 5',
+  server = "My_Localhost",
+  endpoint = "http://localhost:5820",
+  db = "stardog-tutorial-music",
+  Username = "admin"
+)
+results
+```
+
+
+
+#### Example: Query Stardog Cloud in a SERVICE query while connected to localhost
+
+1. Before starting your localhost Stardog server, create a file called services.sdpass in the folder specified by the STARDOG_HOME environment variable. Assuming the file/folder will only be readable by your user account, the file should contain the following text, substituting your username/password:         
+  something.stardog.cloud:5820:*:YourUsername:YourPassword
+2. Start the localhost Stardog server and run your query:
+
+```{r}
+results = stardog(
+  query = '
+    SELECT * {
+      SERVICE <https://ucb-poc.stardog.cloud:5820/ucb/query> {
+          ?s ?p ?o .
+      }
+    } 
+    limit 10',
+  server = "My_Localhost",
+  endpoint = "http://localhost:5820",
+  db = "stardog-tutorial-music",
+  Username = "admin"
+)
+results
+```
+
+
+### Querying Stardog in shorthand
+
+`stardog_()` -- note the underscore-- is a convenience wrapper function,
+eg., for querying repeatedly within a function or to simplify the code
+required to make repeated queries on the same environment. It calls the
+function `stardog()` with the expectation that all the required
+`stardog()` function arguments other than the query are already defined
+and available in the caller environment.
+
+```{r include=F, echo=F}
+stardog_ = function(q = query, d = db, g = graph, U = Username, e = endpoint){
+  x = stardog(query = q, db = d, graph = g, Username = U, endpoint = e ) ; x }
+```
+
+Define variables:
+
+```{r}
+endpoint = "http://localhost:5820"
+db = "stardog-tutorial-music"
+graph = ""
+Username = "admin"
+```
+
+Query away!
+
+```{r}
+stardog_("select distinct ?song ?writer {?s a :Song ; :name ?song ; :writer ?w . ?w :name ?writer} order by desc(?writer) limit 5")
+```
+
+```{r}
+stardog_("select ?album ?artist {?s a :Album; :name ?album; :artist ?a. ?a :name ?artist} order by ?s limit 3")
+```
+
+### Query Stardog from a Shiny app
+
+The `stardog_shiny()` function adapts the function for a Shiny app that
+has input fields for username and password, so it doesn't add or look
+for credentials in the system's secure credential store.
+
+```{r echo=F, include=F}
+stardog_shiny = function(
+  server = "My_Localhost", 
+  endpoint = "http://localhost:5820", 
+  db = "", 
+  graph = "",
+  query = 'select * {?s ?p ?o} limit 10', 
+  reasoning = F,
+  Username = input$username_input, ## Shiny app input - update for the id in your app
+  Password = input$password_input,
+  include_namespaces = F, 
+  clear_keys = F
+){
+  sd_url = paste0(endpoint, paste0("/", db,graph, "/query/") %>% gsub("//","/",.))
+  if(reasoning){ sd_url = paste0(sd_url, "reasoning/") }
+  sparql.result = SPARQL(url = sd_url, query = query,curl_args = c('userpwd'= paste0(Username,':',Password)) ) 
+  if(!include_namespaces) { sparql.result = sparql.result %>% .[["results"]] }
+  sparql.result
+}
+```
+
+# Send Stardog commands over HTTP
+
+The `stardog_http()` function lets you send commands to Stardog via
+HTTP.
+
+```{r echo=F,include=F}
+stardog_http = function( 
+  query = "namespaces",  
+  endpoint = "http://localhost:5820",
+  db = "",
+  graph = "", 
+  Username = "admin",   
+  clear_keys = F, 
+  httr_method = "GET", # or "POST" etc.
+  body = FALSE,
+  assign_temp_results = F # used for debugging, to see exactly what was returned by the server
+){ 
+  con_service = "stardoghttp"
+  handle_keys(con_service = con_service, Username = Username, clear_keys = clear_keys, as_password = F)
+  sd_url = paste0(endpoint, paste0("/", db, "/", query) %>% gsub("//","/",.))
+## Execute the query
+  response = eval(parse(text= paste0("httr::",httr_method)))(
+    url = sd_url %>% URLencode(), 
+    add_headers(
+      Authorization = paste0("Basic ", base64_enc(paste0(Username,":", key_get(service = con_service, username = Username) )) ),  
+      accept = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9", 
+      `accept-encoding` = "gzip, deflate, br" 
+    ) , # end headers
+    body = body
+  ) 
+  cat("status: ", response$status_code, "\n") 
+  assign("Last.status", response$status_code %>% as.character, envir = .GlobalEnv)
+  results =  response$content %>% rawToChar()  
+  if(assign_temp_results){
+    assign("temp_results", results, envir = .GlobalEnv) 
+  }
+  if(results != ""){results = results %>% fromJSON() 
+  df = results[[1]] %>% as.df }
+  df 
+} 
+```
+
+Example: Get the namespaces and prefixes that are defined in the
+**`covid19nyt`** database of our **`Stardog Cloud Express`** endpoint.
+
+```{r}
+stardog_http(
+  query = "namespaces",
+  endpoint = "https://express.stardog.cloud:5820",
+  db = "covid19nyt",
+  Username = "anonymous"
+  )
+```
+
+### Shorthand HTTP calls
+
+`stardog_http_()` --note the underscore at the end-- is a shorthand
+wrapper function for convenience, like the `stardog_()` function above.
+
+```{r echo=F, include=F}
+stardog_http_ = function(q = query, d = db, g = graph, U = Username, e = endpoint, m = httr_method, b = body){
+  x = stardog_http(query = q, db = d, graph = g, Username = U, endpoint = e, httr_method = m, body = b )
+  x
+}
+```
+
+### Stardog HTTP calls from a Shiny app
+
+The `stardog_http_shiny()` function adapts the function for a Shiny app
+that has input fields for username and password.
+
+```{r echo=F, include=F}
+stardog_http_shiny = function( 
+  query = "namespaces",  
+  endpoint = "",
+  db = "",
+  graph = "", 
+  Username = input$username_input, ## example of retrieving Shiny user input
+  Password = input$password_input,
+  httr_method = "GET", # or "POST" etc.
+  body = FALSE,
+  assign_temp_results = F # For debugging, to see exactly what was returned by the server
+){ 
+  sd_url = paste0(endpoint, paste0("/", db, "/", query) %>% gsub("//","/",.))
+  response = eval(parse(text= paste0("httr::",httr_method)))(
+    url = sd_url %>% URLencode(), 
+    add_headers( 
+      Authorization = paste0("Basic ",  base64_enc(paste0(Username,":", Password ))   ),  
+      accept = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9", 
+      `accept-encoding` = "gzip, deflate, br" 
+    ) , # end headers
+    body = body
+  ) 
+  cat("status: ", response$status_code, "\n") 
+  assign("Last.status", response$status_code %>% as.character, envir = .GlobalEnv)
+  results =  response$content %>% rawToChar()  
+  if(assign_temp_results){
+    assign("temp_results", results, envir = .GlobalEnv) 
+  }
+  if(results != ""){results = results %>% fromJSON() 
+  df = results[[1]] %>% as.df }
+  df 
+} 
+```
+
+# Create a Database
+
+```{r echo=F, include=F}
+stardog_create_db = function(
+  db_name, 
+  endpoint = "http://localhost:5820"
+  ){
+  r = stardog_http(
+    endpoint = endpoint,
+    httr_method = "POST", 
+    query = 'admin/databases', 
+    body = list(root = paste0('{"dbname": "',db_name,'"}'))
+  ) 
+  db_status = "" ; stardog_message = "";
+  if(Last.status == "201"){db_status = paste("Database",db_name, "created!\n")}
+  if(Last.status == "400"){db_status = paste("Database",db_name, "could not be created! Does it already exist?\n")
+    stardog_message = paste("Stardog says:",r$x[1])
+  }
+  return(c(db_status, "\n", stardog_message))
+}
+```
+
+Example (not run)
+
+```{r eval=F}
+stardog_create_db("cars", endpoint = "http://localhost:5820")
+```
+
+# A supporting function for cURL
+
+`curlr()` is an alternative to `stardog_http()` and works behind the
+scenes for some http operations.
+
+```{r echo=F, include=F}
+## Assume the following would succeed from the system console/terminal:
+## curl -u admin:admin -X POST -F name=@data/namespaces.ttl http://localhost:5820/cars/namespaces  
+
+curlr = function(
+  ## ---- OPTION 1: directly enter curl_statement as string:
+  curl_statement = "",
+  ## ---- OPTION 2: construct the curl_statement from variables:
+  url = "",
+  endpoint = "http://localhost:5820",
+  db = "",
+  Username = "",
+  myAuth = "", # eg. "admin:admin",  
+  VERB = "POST",
+  query = "",
+  payload = "",
+  error_log = file.path("logs", "curlr_last_error.txt"),
+  ##---- more options
+  return_json = FALSE, # default export as list
+  show_progress = FALSE,
+  show_response = FALSE, 
+  assign_outcome = FALSE, 
+  assign_to_env = caller_env()
+){
+  if(!file.exists(error_log)){
+    log_dir = gsub("/[^/]*$", "",error_log)
+    dir.create(file.path(log_dir), showWarnings = FALSE) 
+    file.create(error_log) 
+  }
+  myUrl = if(url == "") {paste0(endpoint,if(db!="")paste0("/",db), "/", query)} else {url}
+  if(myAuth!="")myAuth = paste0("-u ", gsub("-u ", "", myAuth))
+  if(curl_statement == ""){
+    if(myAuth == "" || Username != ""){
+  con_service = "stardoghttp"
+  # # Secure key handling using system key store
+  handle_keys(con_service = con_service, Username = Username)
+  myAuth = paste0(Username,":",key_get(service = con_service, username = Username))
+  }
+    curl_statement = paste0("curl ",myAuth," -X ",VERB," ",payload," ",myUrl)}
+  ## Execute the cURL
+  x = system2(command = "cmd", input = curl_statement, stdout = T, stderr = error_log)
+  outcome = list(
+    preamble = x[1:3], # Microsoft copyright statement etc
+    command = x[4], 
+    progress = if(x[5] == "  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current"){ x[5:7] ; had_progress = T} else {FALSE; had_progress = F}, 
+    response = if(had_progress){ x[8:(length(x)-1)] } else {x[5:(length(x)-1)]}
+  )
+  if(had_progress && show_progress){
+    cat(paste(outcome$progress , collapse = " \n"))
+  }
+  response = paste(outcome$response , collapse = " \n") %>% fix_json_encoding()
+  if(response != ""){
+  response = if(return_json){response}else{fromJSON(response)}
+  if(show_response){
+    if(return_json){
+      cat(paste(outcome$response , collapse = " \n") %>% fix_json_encoding())
+    } else {      print(response)    }
+  }
+  if(assign_outcome){assign("curlr_outcome", outcome, envir = assign_to_env)}
+  return(response)
+  } 
+}
+```
+
+### Option 1: use `curlr()` to execute a cURL statement provided as a string
+
+Example: get the namespaces registered in a database
+
+```{r}
+curlr(curl_statement = "curl -u anonymous:anonymous -X GET https://express.stardog.cloud:5820/covid19nyt/namespaces")
+```
+
+Example: using `curlr()` to get JSON results
+
+```{r}
+curlr(curl_statement = "curl -u anonymous:anonymous -X GET https://express.stardog.cloud:5820/covid19nyt/namespaces", return_json = T) 
+```
+
+### Option 2: construct and execute the cURL statement
+
+Example: how to add namespaces defined in a file to a Stardog database
+(not run)
+
+```{r eval=F}
+namespaces_file = file.path("data", "namespaces.ttl")
+
+x = curlr(
+  endpoint = "http://localhost:5820",
+  db = "cars",
+  Username = "admin",
+  VERB = "POST",
+  query = "namespaces",
+  payload = paste0("-F name=@",namespaces_file)
+)
+```
+
+# Add namespaces to a database
+
+`stardog_add_namespaces()` is a dedicated function to do the same thing.
+It also operates behind the scenes to automatically add namespaces when
+you import CSV data. The input_file can be in either turtle or sms
+format.
+
+```{r echo=F, include=F}
+stardog_add_namespaces = function(
+  endpoint = "http://localhost:5820",
+  db = "",
+  Username = "admin",
+  input_file,
+  ...
+)
+{
+  con_service = "stardoghttp"
+  # # Secure key handling using system key store
+  handle_keys(con_service = con_service, Username = Username)
+  myAuth = paste0(Username,":",key_get(service = con_service, username = Username))
+  ns_db = db
+  namespaces = input_file %>%
+    read_lines()
+  sms_namespaces = namespaces %>%  # if it's an SMS file
+    .[str_detect(tolower(.) ,"^[ ]*prefix " )] %>% paste("@",., " .",sep = "", collapse = " ") %>% gsub("^@ .$", "",.)
+  rdf_namespaces = namespaces %>%  # if it's an RDF file
+    .[str_detect(tolower(.), "^[ ]*@prefix ")] %>% paste(sep = " ", collapse = " ")
+  namespaces2 = paste(sms_namespaces,rdf_namespaces, sep =" ") # either works.
+  new_namespaces_file = file.path("data","namespaces.ttl")
+  if(file.exists(new_namespaces_file)){file.remove(new_namespaces_file) %>% invisible()}
+  write_file(namespaces2, new_namespaces_file)
+  # send the cURL
+  namespaces_file = new_namespaces_file
+  r = curlr(
+    db = ns_db,
+    VERB = "POST",
+    query = "namespaces",
+    payload = paste0("-F name=@",namespaces_file),
+    show_response = F,
+    myAuth = myAuth,
+    ...
+  )
+  file.remove(new_namespaces_file) %>% invisible()
+  r
+}
+```
+
+Example: adding namespaces to a database (not run)
+
+```{r eval=F}
+stardog_add_namespaces(db = "cars", input_file = file.path("data", "cars_mappings.sms"))
+```
+
+# Import data from a CSV file and mapping
+
+```{r echo=F, include=F}
+stardog_virtual_import = function( 
+  endpoint = "http://localhost:5820", 
+  db, 
+  Username = "admin", 
+  input_file_type = "DELIMITED", 
+  input_file, mapping_file 
+  ){ 
+  con_service = "stardoghttp" 
+  ## Secure key handling using system key store 
+  handle_keys(con_service = con_service, Username = Username) 
+  myAuth = paste0(Username,":",key_get(service = con_service, username = Username))
+  ## create the db if it doesn't exist yet 
+  db_list = stardog_http(query = "admin/databases",endpoint = endpoint,Username = Username) 
+  db_result = "Database exists!"
+  if(isTRUE(db %notin% db_list$x)) {db_result = stardog_create_db(db) }
+  ## perform the virtual import
+  my_curl = paste0('curl -u ',myAuth,' -F "database=',db,'" -F "mappings=<',mapping_file,'" -F "input_file_type=',input_file_type,'" -F "input_file=<',input_file,'" ',endpoint,'/admin/virtual_graphs/import' ) 
+  curlr(curl_statement = my_curl ) 
+  ## automatically add namespaces found in the imported data 
+  r = stardog_add_namespaces(endpoint = endpoint,db=db, input_file = mapping_file, Username = Username) 
+  return(c(db_result, r))
+}
+```
+
+#### Example: Use virtual import to load data from a CSV file into a Stardog database
+
+By default, a virtual import with this function will also automatically
+
+-   create the database if it doesn't already exist, and
+
+-   add any namespaces referenced in the mapping file to the database so
+    you won't have to define them before using them in SPARQL queries
+
+```{r}
+stardog_virtual_import( 
+  endpoint = "http://localhost:5820", 
+  Username = "admin", 
+  db = "cars", 
+  input_file_type = "DELIMITED", 
+  input_file = file.path("data","cars.csv"), 
+  mapping_file = file.path("data", "cars_mappings.sms") 
+  )
+```
+
+# Epilogue
+
+Other functions are in development, so stay tuned!
