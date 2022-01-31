@@ -390,6 +390,59 @@ stardog_ <-function (q = query, d = db, g = graph, U = Username, e = endpoint) {
 }
 
 
+
+
+#' stardog_http
+#'
+#' @param query
+#' @param endpoint
+#' @param db
+#' @param graph
+#' @param Username
+#' @param clear_keys
+#' @param httr_method
+#' @param body
+#' @param assign_temp_results
+#' @examples
+#' @export
+
+stardog_http = function(
+  query = "namespaces",
+  endpoint = "http://localhost:5820",
+  db = "",
+  graph = "",
+  Username = "admin",
+  clear_keys = F,
+  httr_method = "GET", # or "POST" etc.
+  body = FALSE,
+  assign_temp_results = F # used for debugging, to see exactly what was returned by the server
+){
+  con_service = "stardoghttp"
+  handle_keys(con_service = con_service, Username = Username, clear_keys = clear_keys, as_password = F)
+  sd_url = paste0(endpoint, paste0("/", db, "/", query) %>% gsub("//","/",.))
+  ## Execute the query
+  response = eval(parse(text= paste0("httr::",httr_method)))(
+    url = sd_url %>% URLencode(),
+    add_headers(
+      Authorization = paste0("Basic ", base64_enc(paste0(Username,":", key_get(service = con_service, username = Username) )) ),
+      accept = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
+      `accept-encoding` = "gzip, deflate, br"
+    ) , # end headers
+    body = body
+  )
+  cat("status: ", response$status_code, "\n")
+  assign("Last.status", response$status_code %>% as.character, envir = .GlobalEnv)
+  results =  response$content %>% rawToChar()
+  if(assign_temp_results){
+    assign("temp_results", results, envir = .GlobalEnv)
+  }
+  if(results != ""){results = results %>% fromJSON()
+  df = results[[1]] %>% as.df }
+  df
+}
+
+
+
 #' stardog_http_
 #'
 #' stardog_http_ = function(q = query, d = db, g = graph, U = Username, e = endpoint, m = httr_method, b = body){
