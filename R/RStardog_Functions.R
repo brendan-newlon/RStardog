@@ -470,25 +470,28 @@ stardog_http_ <-function (q = query, d = db, g = graph, U = Username, e = endpoi
 #' stardog_create_db
 #'
 #' @param db_name
+#' @param Username
 #' @param endpoint
 #' @examples stardog.create_db("cars")
 #' @export
 
 stardog_create_db = function(
   db_name,
-  endpoint = "http://localhost:5820"
+  endpoint = "http://localhost:5820",
+  Username
 ){
   r = stardog_http(
     endpoint = endpoint,
+    Username = Username,
     httr_method = "POST",
     query = 'admin/databases',
     body = list(root = paste0('{"dbname": "',db_name,'"}')
                 #------------------------------------------------------feature request: support loading an RDF file per docs:
                 # https://stardog-union.github.io/http-docs/#operation/createNewDatabase
     )
-  ) ;
+  )
   # to include files, may need to add encode = ... see httr help on ?POST
-  if(Last.status == "201"){cat("Database",db_name, "created!\n")};
+  if(Last.status == "201"){cat("Database",db_name, "created!\n")}
   if(Last.status == "400"){cat("Database",db_name, "could not be created! Does it already exist?\n")
     # print(r)
     cat("Stardog says:",r$x[1])
@@ -592,17 +595,166 @@ stardog_derive_classes <-function (db, no_instanceless = F) {
 #' stardog_list_namespaces
 #'
 #' stardog_list_namespaces = function(db, assign=FALSE){
+#'
+#' @param endpoint
+#' @param Username
+#' @param assign_results
 #' @param db
-#' @param assign
+#'
 #' @examples stardog_list_namespaces(db =  , assign = FALSE)
 #' @export
 
-stardog_list_namespaces <-function (db, assign = FALSE) {
-  namespace_prefix_lookup_table = stardog_http(db = db, query = "namespaces") %>% setNames(c("prefix",
-                                                                                             "namespace"))
-  if (assign)
+stardog_list_namespaces <- function (
+  endpoint,
+  Username,
+  db,
+  assign_results = FALSE
+  )
+  {
+  namespace_prefix_lookup_table =
+    stardog_http(
+      endpoint = endpoint,
+      Username = Username,
+      db = db,
+      query = "namespaces") %>% setNames(c("prefix", "namespace"))
+  if (assign_results){
     assign("namespace_prefix_lookup_table", namespace_prefix_lookup_table, envir = caller_env())
+  }
   namespace_prefix_lookup_table
+}
+
+
+
+# A supporting function for cURL
+## Assume the following would succeed from the system console/terminal:
+## curl -u admin:admin -X POST -F name=@data/namespaces.ttl http://localhost:5820/cars/namespaces
+
+#' curlr
+#'
+#' @param curl_statement
+#' @param url
+#' @param endpoint
+#' @param db
+#' @param Username
+#' @param myAuth
+#' @param VERB
+#' @param query
+#' @param payload
+#' @param error_log
+#' @param return_json
+#' @param show_progress
+#' @param show_response
+#' @param assign_outcome
+#' @param assign_to_env
+#' @examples
+#' @export
+curlr = function(
+  ## ---- OPTION 1: directly enter curl_statement as string:
+  curl_statement = "",
+  ## ---- OPTION 2: construct the curl_statement from variables:
+  url = "",
+  endpoint = "http://localhost:5820",
+  db = "",
+  Username = "",
+  myAuth = "", # eg. "admin:admin",
+  VERB = "POST",
+  query = "",
+  payload = "",
+  error_log = file.path("logs", "curlr_last_error.txt"),
+  ##---- more options
+  return_json = FALSE, # default export as list
+  show_progress = FALSE,
+  show_response = FALSE,
+  assign_outcome = FALSE,
+  assign_to_env = caller_env()
+){
+  if(!file.exists(error_log)){
+    log_dir = gsub("/[^/]*$", "",error_log)
+    dir.create(file.path(log_dir), showWarnings = FALSE)
+    file.create(error_log)
+  }
+  myUrl = if(url == "") {paste0(endpoint,if(db!="")paste0("/",db), "/", query)} else {url}
+  if(myAuth!="")myAuth = paste0("-u ", gsub("-u ", "", myAuth))
+  if(curl_statement == ""){
+    if(myAuth == "" || Username != ""){
+      con_service = "stardoghttp"
+      # # Secure key handling using system key store
+      handle_keys(con_service = con_service, Username = Username)
+      myAuth = paste0(Username,":",key_get(service = con_service, username = Username))
+    }
+    curl_statement = paste0("curl ",myAuth," -X ",VERB," ",payload," ",myUrl)}
+  ## Execute the cURL
+  x = system2(command = "cmd", input = curl_statement, stdout = T, stderr = error_log)
+  outcome = list(
+    preamble = x[1:3], # Microsoft copyright statement etc
+    command = x[4],
+    progress = if(x[5] == "  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current"){ x[5:7] ; had_progress = T} else {FALSE; had_progress = F},
+    response = if(had_progress){ x[8:(length(x)-1)] } else {x[5:(length(x)-1)]}
+  )
+  if(had_progress && show_progress){
+    cat(paste(outcome$progress , collapse = " \n"))
+  }
+  response = paste(outcome$response , collapse = " \n") %>% fix_json_encoding()
+  if(response != ""){
+    response = if(return_json){response}else{fromJSON(response)}
+    if(show_response){
+      if(return_json){
+        cat(paste(outcome$response , collapse = " \n") %>% fix_json_encoding())
+      } else {      print(response)    }
+    }
+    if(assign_outcome){assign("curlr_outcome", outcome, envir = assign_to_env)}
+    return(response)
+  }
+}
+
+
+#' stardog_add_namespaces
+#'
+#' @param endpoint
+#' @param db
+#' @param Username
+#' @param input_file
+#' @param ...
+#'
+#' @examples
+#' @export
+
+stardog_add_namespaces = function(
+  endpoint = "http://localhost:5820",
+  db = "",
+  Username = "admin",
+  input_file,
+  ...
+)
+{
+  con_service = "stardoghttp"
+  # # Secure key handling using system key store
+  handle_keys(con_service = con_service, Username = Username)
+  myAuth = paste0(Username,":",key_get(service = con_service, username = Username))
+  ns_db = db
+  namespaces = input_file %>%
+    read_lines()
+  sms_namespaces = namespaces %>%  # if it's an SMS file
+    .[str_detect(tolower(.) ,"^[ ]*prefix " )] %>% paste("@",., " .",sep = "", collapse = " ") %>% gsub("^@ .$", "",.)
+  rdf_namespaces = namespaces %>%  # if it's an RDF file
+    .[str_detect(tolower(.), "^[ ]*@prefix ")] %>% paste(sep = " ", collapse = " ")
+  namespaces2 = paste(sms_namespaces,rdf_namespaces, sep =" ") # either works.
+  new_namespaces_file = file.path("data","namespaces.ttl")
+  if(file.exists(new_namespaces_file)){file.remove(new_namespaces_file) %>% invisible()}
+  write_file(namespaces2, new_namespaces_file)
+  # send the cURL
+  namespaces_file = new_namespaces_file
+  r = curlr(
+    db = ns_db,
+    VERB = "POST",
+    query = "namespaces",
+    payload = paste0("-F name=@",namespaces_file),
+    show_response = F,
+    myAuth = myAuth,
+    ...
+  )
+  file.remove(new_namespaces_file) %>% invisible()
+  r
 }
 
 
@@ -614,6 +766,7 @@ stardog_list_namespaces <-function (db, assign = FALSE) {
 #' @param input_file_type
 #' @param input_file
 #' @param mapping_file
+#'
 #' @examples
 #' @export
 
@@ -626,16 +779,20 @@ stardog_virtual_import = function(
   mapping_file
 ){
 
+  Username = gsub(":.*","",myAuth)
+
   # create the db if it doesn't exist yet
-  db_list = stardog_http(query = "admin/databases")
-  if(isTRUE(db %notin% db_list$x)) stardog.create_db(db)
+  db_list = stardog_http(endpoint = endpoint, Username = Username, query =  "admin/databases")
+  if(isTRUE(db %notin% db_list$x)){
+    stardog_create_db(endpoint = endpoint, db_name = db, Username = Username)
+  }
 
   # do the virtual import
   my_curl = paste0('curl -u ',myAuth,' -F "database=',db,'" -F "mappings=<',mapping_file,'" -F "input_file_type=',input_file_type,'" -F "input_file=<',input_file,'" ',endpoint,'/admin/virtual_graphs/import' )
   # system2(command = "cmd" , input = c(my_curl) )
   curlr(curl_statement =  my_curl )
 
-  r = stardog.add_namespaces(endpoint = endpoint,db=db, input_file = mapping_file, myAuth = myAuth); r
+  r = stardog_add_namespaces(endpoint = endpoint, db=db, input_file = mapping_file, Username = Username); r
 
 }
 # cat(my_curl)
