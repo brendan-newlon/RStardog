@@ -674,7 +674,7 @@ curlr = function(
     file.create(error_log)
   }
   myUrl = if(url == "") {paste0(endpoint,if(db!="")paste0("/",db), "/", query)} else {url}
-  if(myAuth!="")myAuth = paste0("-u ", gsub("-u ", "", myAuth))
+  if(myAuth!=""){myAuth = paste0("-u ", gsub("-u ", "", myAuth))}
   if(curl_statement == ""){
     if(myAuth == "" || Username != ""){
       con_service = "stardoghttp"
@@ -739,7 +739,7 @@ stardog_add_namespaces = function(
   rdf_namespaces = namespaces %>%  # if it's an RDF file
     .[str_detect(tolower(.), "^[ ]*@prefix ")] %>% paste(sep = " ", collapse = " ")
   namespaces2 = paste(sms_namespaces,rdf_namespaces, sep =" ") # either works.
-  new_namespaces_file = file.path("data","namespaces.ttl")
+  new_namespaces_file = file.path("data", "tmp_namespaces.ttl")
   if(file.exists(new_namespaces_file)){file.remove(new_namespaces_file) %>% invisible()}
   write_file(namespaces2, new_namespaces_file)
   # send the cURL
@@ -749,61 +749,103 @@ stardog_add_namespaces = function(
     VERB = "POST",
     query = "namespaces",
     payload = paste0("-F name=@",namespaces_file),
-    show_response = F,
-    myAuth = myAuth,
-    ...
+    show_response = T,
+    Username = Username
   )
   file.remove(new_namespaces_file) %>% invisible()
   r
 }
 
+#################### old version
+#
+# stardog_virtual_import = function(
+#   endpoint = "http://localhost:5820",
+#   db,
+#   myAuth = "admin:admin",
+#   input_file_type = "DELIMITED", # or "JSON"  # ------------ !!!!!!!!!!!!!! FIX ME / TEST !!!!!!!!!!
+#   input_file,
+#   mapping_file
+# ){
+#
+#   Username = gsub(":.*","",myAuth)
+#
+#   # create the db if it doesn't exist yet
+#   db_list = stardog_http(endpoint = endpoint, Username = Username, query =  "admin/databases")
+#   if(isTRUE(db %notin% db_list$x)){
+#     stardog_create_db(endpoint = endpoint, db_name = db, Username = Username)
+#   }
+#
+#   # do the virtual import
+#   my_curl = paste0('curl -u ',myAuth,' -F "database=',db,'" -F "mappings=<',mapping_file,'" -F "input_file_type=',input_file_type,'" -F "input_file=<',input_file,'" ',endpoint,'/admin/virtual_graphs/import' )
+#   # system2(command = "cmd" , input = c(my_curl) )
+#   curlr(curl_statement =  my_curl )
+#
+#   r = stardog_add_namespaces(endpoint = endpoint, db=db, input_file = mapping_file, Username = Username); r
+#
+# }
+# # cat(my_curl)
+#
+# ## eg.
+# # stardog.virtual_import(
+# #   endpoint = "http://localhost:5820",
+# #   db = "cars",
+# #   input_file_type = "DELIMITED",
+# #   input_file = file.path("data","cars.csv"),
+# #   mapping_file = file.path("data", "cars_mappings.sms")
+# # )
+#
+
+
 
 #' stardog_virtual_import
 #'
+#' @param directory
+#' @param csv
+#' @param sms
 #' @param endpoint
 #' @param db
-#' @param myAuth
-#' @param input_file_type
-#' @param input_file
-#' @param mapping_file
-#'
+#' @param Username
 #' @examples
 #' @export
 
 stardog_virtual_import = function(
-  endpoint = "http://localhost:5820",
+  directory,
+  csv ,
+  sms,
+  endpoint,
   db,
-  myAuth = "admin:admin",
-  input_file_type = "DELIMITED", # or "JSON"  # ------------ !!!!!!!!!!!!!! FIX ME / TEST !!!!!!!!!!
-  input_file,
-  mapping_file
+  Username
 ){
+  con_service = "stardoghttp"
+  handle_keys(con_service = con_service, Username = Username)
+  password = key_get(service = con_service, username = Username)
 
-  Username = gsub(":.*","",myAuth)
-
-  # create the db if it doesn't exist yet
   db_list = stardog_http(endpoint = endpoint, Username = Username, query =  "admin/databases")
   if(isTRUE(db %notin% db_list$x)){
     stardog_create_db(endpoint = endpoint, db_name = db, Username = Username)
   }
+  importer_bat = file.path(directory, "tmp_importer.bat")
+  virtual_import_cmd = paste("stardog-admin --server", endpoint, "virtual import --format sms2 -p", password,"-u", Username, db, file.path(directory, sms), file.path(directory,csv) )
 
-  # do the virtual import
-  my_curl = paste0('curl -u ',myAuth,' -F "database=',db,'" -F "mappings=<',mapping_file,'" -F "input_file_type=',input_file_type,'" -F "input_file=<',input_file,'" ',endpoint,'/admin/virtual_graphs/import' )
-  # system2(command = "cmd" , input = c(my_curl) )
-  curlr(curl_statement =  my_curl )
+  write_file(x = virtual_import_cmd, file = importer_bat)
+  system2(command = importer_bat )
+  file.remove(importer_bat)
+  ## add namespaces parsed from sms file
+  namespaces = file.path(directory, sms) %>%
+    read_lines()
+  sms_namespaces = namespaces %>%  # if it's an SMS file
+    .[str_detect(tolower(.) ,"^[ ]*prefix " )] %>% paste("@",., " .",sep = "", collapse = " ") %>% gsub("^@ .$", "",.)
+  rdf_namespaces = namespaces %>%  # if it's an RDF file
+    .[str_detect(tolower(.), "^[ ]*@prefix ")] %>% paste(sep = " ", collapse = " ")
+  namespaces2 = paste(sms_namespaces,rdf_namespaces, sep =" ") # either works.
+  ns_list = str_split(namespaces2, pattern = " ") %>% as.df %>% setNames("x") %>% filter(x != ".", x != " ", x != "", tolower(x) !="@prefix")
+  odd_rows = seq_len(nrow(ns_list)) %% 2
+  prefixes = ns_list[odd_rows == 1, ]
+  uris = ns_list[odd_rows == 0, ] %>% gsub ("<|>","",.)
+  my_ns = tibble(prefix = prefixes, uri = uris)
 
-  r = stardog_add_namespaces(endpoint = endpoint, db=db, input_file = mapping_file, Username = Username); r
-
+  for (i in seq_along(my_ns$prefix)){
+    add_ns_cli = paste("stardog namespace add -p", password,"-u", Username, "--prefix", my_ns$prefix[i],"--uri", my_ns$uri[i]," -- ", paste0(endpoint %>% gsub("\\:[0-9]*$", "", .),"/", db) )
+    system2(command = "cmd", args =c("/c", add_ns_cli), wait = F, invisible = F, minimized = F, stdout = T, timeout = 10)
+  }
 }
-# cat(my_curl)
-
-## eg.
-# stardog.virtual_import(
-#   endpoint = "http://localhost:5820",
-#   db = "cars",
-#   input_file_type = "DELIMITED",
-#   input_file = file.path("data","cars.csv"),
-#   mapping_file = file.path("data", "cars_mappings.sms")
-# )
-
-
