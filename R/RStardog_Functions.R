@@ -29,8 +29,6 @@ source_packages = function(pkgs, show_loaded_packages = F, show_package_processe
   } else{
     invisible(sapply(pkgs, require, character.only = T))
   } # end of: don't show loaded pkgs
-
-
 }
 
 
@@ -280,14 +278,14 @@ fix_json_encoding <-function (x) {
 }
 
 
-#' start_stardog
+#' stardog_start
 #'
-#' start_stardog = function(server = "localhost"){
+#' stardog_start = function(server = "localhost"){
 #' @param server
-#' @examples start_stardog(server = localhost)
+#' @examples stardog_start(server = localhost)
 #' @export
 
-start_stardog <-function (server = "localhost") {
+stardog_start <-function (server = "localhost") {
 	if (server == "localhost") {
 		cat("Starting Stardog server on Localhost. \nThis may take a couple of minutes...\n")
 		stdout = suppressWarnings(system2(command = "cmd", args = c("/c", "stardog-admin server start"),
@@ -298,25 +296,24 @@ start_stardog <-function (server = "localhost") {
 }
 
 
-#' stardog_start
+#' start_stardog
 #'
-#' @param
-#' @examples stardog_start()
+#' @param server
 #' @export
-
-stardog_start <-function () {
-	start_stardog
+#' @examples
+start_stardog <-function (server = "localhost") {
+  stardog_start(server)
 }
 
 
-#' stop_stardog
+#' stardog_stop
 #'
-#' stop_stardog = function(server = "localhost"){
+#' stardog_stop = function(server = "localhost"){
 #' @param server
-#' @examples stop_stardog(server = localhost)
+#' @examples stardog_stop(server = localhost)
 #' @export
 
-stop_stardog <-function (server = "localhost") {
+stardog_stop <-function (server = "localhost") {
 	if (server == "localhost") {
 		cat("Stopping Stardog server on Localhost...\n")
 		stdout = system2(command = "stardog-admin", args = c("server stop"), wait = F, invisible = F,
@@ -325,15 +322,15 @@ stop_stardog <-function (server = "localhost") {
 	}
 }
 
-
-#' stardog_stop
+#
+#
+#' stop_stardog
 #'
-#' @param
-#' @examples stardog_stop()
+#' @param server
 #' @export
-
-stardog_stop <-function () {
-	stop_stardog
+#' @examples
+stop_stardog <-function (server = "localhost") {
+	stardog_stop(server)
 }
 
 
@@ -436,9 +433,11 @@ stardog_http = function(
   if(assign_temp_results){
     assign("temp_results", results, envir = .GlobalEnv)
   }
+  df = tibble(x = "")
   if(results != ""){results = results %>% fromJSON()
-  df = results[[1]] %>% as.df }
-  df
+  df = results[[1]] %>% as.df
+  return(df)
+  }
 }
 
 
@@ -821,6 +820,12 @@ stardog_virtual_import = function(
   password = key_get(service = con_service, username = Username)
 
   db_list = stardog_http(endpoint = endpoint, Username = Username, query =  "admin/databases")
+
+  db_arg = db
+
+  for(i in 1:length(db_arg)){
+    db = db_arg[[i]]
+
   if(isTRUE(db %notin% db_list$x)){
     stardog_create_db(endpoint = endpoint, db_name = db, Username = Username)
   }
@@ -840,7 +845,7 @@ stardog_virtual_import = function(
   namespaces2 = paste(sms_namespaces,rdf_namespaces, sep =" ") # either works.
   ns_list = str_split(namespaces2, pattern = " ") %>% as.df %>% setNames("x") %>% filter(x != ".", x != " ", x != "", tolower(x) !="@prefix")
   odd_rows = seq_len(nrow(ns_list)) %% 2
-  prefixes = ns_list[odd_rows == 1, ]
+  prefixes = ns_list[odd_rows == 1, ] %>% gsub(":", "",.)
   uris = ns_list[odd_rows == 0, ] %>% gsub ("<|>","",.)
   my_ns = tibble(prefix = prefixes, uri = uris)
 
@@ -848,4 +853,59 @@ stardog_virtual_import = function(
     add_ns_cli = paste("stardog namespace add -p", password,"-u", Username, "--prefix", my_ns$prefix[i],"--uri", my_ns$uri[i]," -- ", paste0(endpoint %>% gsub("\\:[0-9]*$", "", .),"/", db) )
     system2(command = "cmd", args =c("/c", add_ns_cli), wait = F, invisible = F, minimized = F, stdout = T, timeout = 10)
   }
+
+  }
+
 }
+
+
+#' stardog_data_add
+#'
+#' @param directory
+#' @param data_file
+#' @param endpoint
+#' @param db
+#' @param Username
+#' @param file_format
+#' @param remove_all
+#' @examples
+#' @export
+
+stardog_data_add = function(
+  directory,
+  data_file,
+  endpoint,
+  db,
+  Username,
+  file_format = "TURTLE",
+  remove_all = F
+){
+  con_service = "stardoghttp"
+  handle_keys(con_service = con_service, Username = Username)
+  password = key_get(service = con_service, username = Username)
+  ## make the db if it doesn't exist
+  db_list = stardog_http(endpoint = endpoint, Username = Username, query =  "admin/databases", assign_temp_results = T)
+  if(isTRUE(db %notin% db_list$x)){
+    stardog_create_db(endpoint = endpoint, db_name = db, Username = Username)
+  }
+  ## ---------------------- fix me to support specifying target named graphs, other file formats, etc
+  ##  https://docs.stardog.com/stardog-cli-reference/data/data-add
+  cli_cmd = paste0("stardog data add -p ", password," ")
+  if(remove_all){ cli_cmd = paste0(cli_cmd, "--remove-all ")}
+  for(i in 1:length(db)){
+    cli_cmd = paste0(cli_cmd, "-u ", Username, " ", paste0(endpoint %>% gsub("\\:[0-9]*$", "", .),"/", db[[i]]) ," ", file.path(directory, data_file) )
+    system2(command = "cmd", args =c("/c", cli_cmd), wait = F, invisible = F, minimized = F, stdout = T, timeout = 10)
+  }
+}
+
+## eg.
+# stardog_data_add (
+#   directory = file.path("data"),
+#   data_file = "ontology.ttl",
+#   db = "myDB",  ## or several dbs eg. c("myDB01", "myDB02")
+#   endpoint = "http://localhost:5820",
+#   Username = "happy_person_1",
+#   file_format = "TURTLE",
+#   remove_all = F
+# )
+

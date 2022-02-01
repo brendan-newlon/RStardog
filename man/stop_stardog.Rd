@@ -7,8 +7,5 @@
 stop_stardog(server = "localhost")
 }
 \description{
-
-}
-\examples{
-stop_stardog(server = localhost)
+stop_stardog
 }

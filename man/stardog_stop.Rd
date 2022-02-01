@@ -4,11 +4,11 @@
 \alias{stardog_stop}
 \title{stardog_stop}
 \usage{
-stardog_stop()
+stardog_stop(server = "localhost")
 }
 \description{
-stardog_stop
+
 }
 \examples{
-stardog_stop()
+stardog_stop(server = localhost)
 }

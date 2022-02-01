@@ -4,14 +4,7 @@
 \alias{stardog_virtual_import}
 \title{stardog_virtual_import}
 \usage{
-stardog_virtual_import(
-  endpoint = "http://localhost:5820",
-  db,
-  myAuth = "admin:admin",
-  input_file_type = "DELIMITED",
-  input_file,
-  mapping_file
-)
+stardog_virtual_import(directory, csv, sms, endpoint, db, Username)
 }
 \description{
 stardog_virtual_import

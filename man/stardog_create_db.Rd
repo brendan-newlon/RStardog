@@ -4,7 +4,7 @@
 \alias{stardog_create_db}
 \title{stardog_create_db}
 \usage{
-stardog_create_db(db_name, endpoint = "http://localhost:5820")
+stardog_create_db(db_name, endpoint = "http://localhost:5820", Username)
 }
 \description{
 stardog_create_db

@@ -4,7 +4,10 @@
 \alias{stardog_list_namespaces}
 \title{stardog_list_namespaces}
 \usage{
-stardog_list_namespaces(db, assign = FALSE)
+stardog_list_namespaces(endpoint, Username, db, assign_results = FALSE)
+}
+\arguments{
+\item{db}{}
 }
 \description{
 
