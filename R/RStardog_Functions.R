@@ -1,5 +1,36 @@
 ## RStardog_Functions.R - compiled by RoxygenReady, a package by @vertesy
 
+#' as.df
+#'
+#' as.df = function(x){as.data.frame(x,strings.as.factors=F)}
+#' @param x
+#' @examples as.df(x =  )
+#' @export
+#' @import keyring
+#' @import SPARQL
+#' @import readr
+#' @import dplyr
+#' @import tidyr
+#' @import utf8
+#' @import stringr
+#' @import rlang
+#' @import httr
+#' @import jsonlite
+#' @import digest
+#' @import SemNetCleaner
+#' @import tidyverse
+#' @import splitstackshape
+#' @import magrittr
+
+as.df <-function (x) {
+  as.data.frame(x, strings.as.factors = F)
+}
+
+
+
+ # source_packages(c("keyring", "SPARQL", "magrittr", "readr", "dplyr", "tidyr", "utf8",
+ # "stringr", "rlang", "httr", "jsonlite","digest", "SemNetCleaner", "tidyverse", "splitstackshape", "magrittr"))
+
 
 #' Install and load multiple packages at once
 #'
@@ -254,15 +285,6 @@ summon = function(
 
 
 
-#' as.df
-#'
-#' as.df = function(x){as.data.frame(x,strings.as.factors=F)}
-#' @param x
-#' @examples as.df(x =  )
-#' @export
-as.df <-function (x) {
-	as.data.frame(x, strings.as.factors = F)
-}
 
 
 #' fix_json_encoding
