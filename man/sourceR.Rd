@@ -18,9 +18,6 @@ sourceR(
 \arguments{
 \item{exclude_sourceR}{}
 }
-\value{
-
-}
 \description{
 Source scripts selectively, recursively
 }

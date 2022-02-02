@@ -15,6 +15,9 @@ stardog_reload_db(
   remove_all = T
 )
 }
+\arguments{
+\item{remove_all}{}
+}
 \description{
 stardog_reload_db
 }

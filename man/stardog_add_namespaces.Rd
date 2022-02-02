@@ -12,9 +12,6 @@ stardog_add_namespaces(
   ...
 )
 }
-\arguments{
-\item{...}{}
-}
 \description{
 stardog_add_namespaces
 }

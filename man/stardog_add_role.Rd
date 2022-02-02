@@ -10,5 +10,5 @@ stardog_add_role(role_name)
 
 }
 \examples{
-stardog_add_role(role_name =  )
+stardog_add_role(role_name = "regular_user" )
 }

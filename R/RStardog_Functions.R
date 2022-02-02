@@ -5,7 +5,6 @@
 #' as.df = function(x){as.data.frame(x,strings.as.factors=F)}
 #' @param x
 #' @examples as.df(x =  )
-#' @export
 #' @import keyring
 #' @import SPARQL
 #' @import readr
@@ -21,6 +20,7 @@
 #' @import tidyverse
 #' @import splitstackshape
 #' @import magrittr
+#' @export
 
 as.df <-function (x) {
   as.data.frame(x, strings.as.factors = F)
@@ -75,10 +75,8 @@ source_packages = function(pkgs, show_loaded_packages = F, show_package_processe
 #' @param exclude_marked_exclude
 #' @param exclude_sourceR
 #'
-#' @return
 #' @export
 #'
-#' @examples
 sourceR = function(source_dir = "R",
                    include_rmd = F,
                    exclude_dirs = "",
@@ -322,7 +320,6 @@ stardog_start <-function (server = "localhost") {
 #'
 #' @param server
 #' @export
-#' @examples
 start_stardog <-function (server = "localhost") {
   stardog_start(server)
 }
@@ -350,7 +347,6 @@ stardog_stop <-function (server = "localhost") {
 #'
 #' @param server
 #' @export
-#' @examples
 stop_stardog <-function (server = "localhost") {
 	stardog_stop(server)
 }
@@ -422,7 +418,6 @@ stardog_ <-function (q = query, d = db, g = graph, U = Username, e = endpoint) {
 #' @param httr_method
 #' @param body
 #' @param assign_temp_results
-#' @examples
 #' @export
 
 stardog_http = function(
@@ -527,7 +522,6 @@ stardog_create_db = function(
 
 #' stardog_list_users
 #'
-#' @param
 #' @examples stardog_list_users()
 #' @export
 
@@ -550,7 +544,6 @@ stardog_list_user_permissions <-function (user) {
 
 #' stardog_list_roles
 #'
-#' @param
 #' @examples stardog_list_roles()
 #' @export
 
@@ -563,7 +556,7 @@ stardog_list_roles <-function () {
 #'
 #' stardog_add_role = function(role_name){
 #' @param role_name
-#' @examples stardog_add_role(role_name =  )
+#' @examples stardog_add_role(role_name = "regular_user" )
 #' @export
 
 stardog_add_role <-function (role_name) {
@@ -667,7 +660,6 @@ stardog_list_namespaces <- function (
 #' @param show_response
 #' @param assign_outcome
 #' @param assign_to_env
-#' @examples
 #' @export
 curlr = function(
   ## ---- OPTION 1: directly enter curl_statement as string:
@@ -736,8 +728,6 @@ curlr = function(
 #' @param Username
 #' @param input_file
 #' @param ...
-#'
-#' @examples
 #' @export
 
 stardog_add_namespaces = function(
@@ -853,7 +843,6 @@ stardog_add_namespaces = function(
 #' @param endpoint
 #' @param db
 #' @param Username
-#' @examples
 #' @export
 
 stardog_virtual_import = function(
@@ -927,7 +916,6 @@ stardog_virtual_import = function(
 #' @param Username
 #' @param file_format
 #' @param remove_all
-#' @examples
 #' @export
 
 stardog_data_add = function(
@@ -982,6 +970,7 @@ stardog_data_add = function(
 #' @param rdf_data_file_format
 #' @param imports
 #' @param remove_all
+#'
 #' @export
 
 stardog_reload_db = function (
