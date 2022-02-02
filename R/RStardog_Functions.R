@@ -751,8 +751,39 @@ stardog_add_namespaces = function(
   con_service = "stardoghttp"
   # # Secure key handling using system key store
   handle_keys(con_service = con_service, Username = Username)
+  password = key_get(service = con_service, username = Username)
   myAuth = paste0(Username,":",key_get(service = con_service, username = Username))
   ns_db = db
+
+
+
+
+  # namespaces = input_file %>%
+  #   read_lines()
+  # sms_namespaces = namespaces %>%  # if it's an SMS file
+  #   .[str_detect(tolower(.) ,"^[ ]*prefix " )] %>% paste("@",., " .",sep = "", collapse = " ") %>% gsub("^@ .$", "",.)
+  # rdf_namespaces = namespaces %>%  # if it's an RDF file
+  #   .[str_detect(tolower(.), "^[ ]*@prefix ")] %>% paste(sep = " ", collapse = " ")
+  # namespaces2 = paste(sms_namespaces,rdf_namespaces, sep =" ") # either works.
+  # new_namespaces_file = file.path("data", "tmp_namespaces.ttl")
+  # if(file.exists(new_namespaces_file)){file.remove(new_namespaces_file) %>% invisible()}
+  # write_file(namespaces2, new_namespaces_file)
+  # # send the cURL
+  # namespaces_file = new_namespaces_file
+  # r = curlr(
+  #   db = ns_db,
+  #   VERB = "POST",
+  #   query = "namespaces",
+  #   payload = paste0("-F name=@",namespaces_file),
+  #   show_response = T,
+  #   Username = Username
+  # )
+  # file.remove(new_namespaces_file) %>% invisible()
+  # r
+
+
+
+  ## add namespaces parsed from sms file
   namespaces = input_file %>%
     read_lines()
   sms_namespaces = namespaces %>%  # if it's an SMS file
@@ -760,21 +791,17 @@ stardog_add_namespaces = function(
   rdf_namespaces = namespaces %>%  # if it's an RDF file
     .[str_detect(tolower(.), "^[ ]*@prefix ")] %>% paste(sep = " ", collapse = " ")
   namespaces2 = paste(sms_namespaces,rdf_namespaces, sep =" ") # either works.
-  new_namespaces_file = file.path("data", "tmp_namespaces.ttl")
-  if(file.exists(new_namespaces_file)){file.remove(new_namespaces_file) %>% invisible()}
-  write_file(namespaces2, new_namespaces_file)
-  # send the cURL
-  namespaces_file = new_namespaces_file
-  r = curlr(
-    db = ns_db,
-    VERB = "POST",
-    query = "namespaces",
-    payload = paste0("-F name=@",namespaces_file),
-    show_response = T,
-    Username = Username
-  )
-  file.remove(new_namespaces_file) %>% invisible()
-  r
+  ns_list = str_split(namespaces2, pattern = " ") %>% as.df %>% setNames("x") %>% filter(x != ".", x != " ", x != "", tolower(x) !="@prefix")
+  odd_rows = seq_len(nrow(ns_list)) %% 2
+  prefixes = ns_list[odd_rows == 1, ] %>% gsub(":", "",.)
+  uris = ns_list[odd_rows == 0, ] %>% gsub ("<|>","",.)
+  my_ns = tibble(prefix = prefixes, uri = uris)
+
+  for (i in seq_along(my_ns$prefix)){
+    add_ns_cli = paste("stardog namespace add -p", password,"-u", Username, "--prefix", my_ns$prefix[i],"--uri", my_ns$uri[i]," -- ", paste0(endpoint %>% gsub("\\:[0-9]*$", "", .),"/", db) )
+    system2(command = "cmd", args =c("/c", add_ns_cli), wait = F, invisible = F, minimized = F, stdout = T, timeout = 10)
+  }
+
 }
 
 #################### old version
@@ -832,7 +859,7 @@ stardog_add_namespaces = function(
 stardog_virtual_import = function(
   directory,
   csv ,
-  sms,
+  sms ,
   endpoint,
   db,
   Username
@@ -857,24 +884,34 @@ stardog_virtual_import = function(
   write_file(x = virtual_import_cmd, file = importer_bat)
   system2(command = importer_bat )
   file.remove(importer_bat)
-  ## add namespaces parsed from sms file
-  namespaces = file.path(directory, sms) %>%
-    read_lines()
-  sms_namespaces = namespaces %>%  # if it's an SMS file
-    .[str_detect(tolower(.) ,"^[ ]*prefix " )] %>% paste("@",., " .",sep = "", collapse = " ") %>% gsub("^@ .$", "",.)
-  rdf_namespaces = namespaces %>%  # if it's an RDF file
-    .[str_detect(tolower(.), "^[ ]*@prefix ")] %>% paste(sep = " ", collapse = " ")
-  namespaces2 = paste(sms_namespaces,rdf_namespaces, sep =" ") # either works.
-  ns_list = str_split(namespaces2, pattern = " ") %>% as.df %>% setNames("x") %>% filter(x != ".", x != " ", x != "", tolower(x) !="@prefix")
-  odd_rows = seq_len(nrow(ns_list)) %% 2
-  prefixes = ns_list[odd_rows == 1, ] %>% gsub(":", "",.)
-  uris = ns_list[odd_rows == 0, ] %>% gsub ("<|>","",.)
-  my_ns = tibble(prefix = prefixes, uri = uris)
 
-  for (i in seq_along(my_ns$prefix)){
-    add_ns_cli = paste("stardog namespace add -p", password,"-u", Username, "--prefix", my_ns$prefix[i],"--uri", my_ns$uri[i]," -- ", paste0(endpoint %>% gsub("\\:[0-9]*$", "", .),"/", db) )
-    system2(command = "cmd", args =c("/c", add_ns_cli), wait = F, invisible = F, minimized = F, stdout = T, timeout = 10)
-  }
+
+
+  # ## add namespaces parsed from sms file
+  # namespaces = file.path(directory, sms) %>%
+  #   read_lines()
+  # sms_namespaces = namespaces %>%  # if it's an SMS file
+  #   .[str_detect(tolower(.) ,"^[ ]*prefix " )] %>% paste("@",., " .",sep = "", collapse = " ") %>% gsub("^@ .$", "",.)
+  # rdf_namespaces = namespaces %>%  # if it's an RDF file
+  #   .[str_detect(tolower(.), "^[ ]*@prefix ")] %>% paste(sep = " ", collapse = " ")
+  # namespaces2 = paste(sms_namespaces,rdf_namespaces, sep =" ") # either works.
+  # ns_list = str_split(namespaces2, pattern = " ") %>% as.df %>% setNames("x") %>% filter(x != ".", x != " ", x != "", tolower(x) !="@prefix")
+  # odd_rows = seq_len(nrow(ns_list)) %% 2
+  # prefixes = ns_list[odd_rows == 1, ] %>% gsub(":", "",.)
+  # uris = ns_list[odd_rows == 0, ] %>% gsub ("<|>","",.)
+  # my_ns = tibble(prefix = prefixes, uri = uris)
+  #
+  # for (i in seq_along(my_ns$prefix)){
+  #   add_ns_cli = paste("stardog namespace add -p", password,"-u", Username, "--prefix", my_ns$prefix[i],"--uri", my_ns$uri[i]," -- ", paste0(endpoint %>% gsub("\\:[0-9]*$", "", .),"/", db) )
+  #   system2(command = "cmd", args =c("/c", add_ns_cli), wait = F, invisible = F, minimized = F, stdout = T, timeout = 10)
+  # }
+
+  # stardog_add_namespaces(
+  #   endpoint = endpoint,
+  #   db = db,
+  #   Username = Username,
+  #   input_file = file.path(directory, sms) ,
+  #   password = password)
 
   }
 
@@ -931,3 +968,72 @@ stardog_data_add = function(
 #   remove_all = F
 # )
 
+
+
+
+
+#' stardog_reload_db
+#'
+#' @param endpoint
+#' @param db
+#' @param Username
+#' @param directory
+#' @param rdf_data_file
+#' @param rdf_data_file_format
+#' @param imports
+#' @param remove_all
+#' @examples
+#' @export
+
+stardog_reload_db = function (
+  endpoint,
+  db,
+  Username,
+  directory,
+  rdf_data_file = "" ,
+  rdf_data_file_format = "TURTLE",
+  imports = "" , # matched pairs with same name eg. filename.csv filename.sms
+  remove_all = T
+){
+
+  for (i in seq_along(db)){
+
+    start_time = timestamp(quiet = T)
+    cat("Reloading", db[[i]], "started at ", start_time, "\n")
+
+    if(rdf_data_file != ""){
+      stardog_data_add (
+        directory = directory,
+        data_file = rdf_data_file,
+        db = db[[i]] ,
+        endpoint = endpoint,
+        Username = Username ,
+        file_format = rdf_data_file_format,
+        remove_all = remove_alll  ##------------------------------- clean slate
+      )
+    }
+
+    if(imports != ""){
+      for (i in seq_along(imports)){
+        stardog_add_namespaces(
+          endpoint = endpoint,
+          db = db[[i]] ,
+          Username = Username,
+          input_file = file.path(directory, paste0(imports[i], ".sms"))
+        )
+
+        stardog_virtual_import(
+          directory = directory,
+          csv = paste0(imports[i],".csv"),
+          sms = paste0(imports[i],".sms"),
+          endpoint= endpoint,
+          db = db[[i]],
+          Username = Username
+        )
+      }
+    }
+    done_time = timestamp(quiet = T)
+    cat("Reloading", db[[i]], "finished at", done_time, "\n")
+
+  }
+}
