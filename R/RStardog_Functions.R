@@ -982,7 +982,6 @@ stardog_data_add = function(
 #' @param rdf_data_file_format
 #' @param imports
 #' @param remove_all
-#' @examples
 #' @export
 
 stardog_reload_db = function (
