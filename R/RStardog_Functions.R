@@ -1009,7 +1009,7 @@ stardog_reload_db = function (
         endpoint = endpoint,
         Username = Username ,
         file_format = rdf_data_file_format,
-        remove_all = remove_alll  ##------------------------------- clean slate
+        remove_all = remove_all  ##------------------------------- clean slate
       )
     }
 
