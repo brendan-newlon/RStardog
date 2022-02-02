@@ -984,16 +984,16 @@ stardog_reload_db = function (
   remove_all = T
 ){
 
-  for (i in seq_along(db)){
+  for (d in 1:length(db)){
 
     start_time = timestamp(quiet = T)
-    cat("Reloading", db[[i]], "started at ", start_time, "\n")
+    cat("Reloading", db[[d]], "started at ", start_time, "\n")
 
     if(rdf_data_file != ""){
       stardog_data_add (
         directory = directory,
         data_file = rdf_data_file,
-        db = db[[i]] ,
+        db = db[[d]] ,
         endpoint = endpoint,
         Username = Username ,
         file_format = rdf_data_file_format,
@@ -1001,11 +1001,11 @@ stardog_reload_db = function (
       )
     }
 
-    if(imports != ""){
+    if(any(imports != "")){
       for (i in seq_along(imports)){
         stardog_add_namespaces(
           endpoint = endpoint,
-          db = db[[i]] ,
+          db = db[[d]] ,
           Username = Username,
           input_file = file.path(directory, paste0(imports[i], ".sms"))
         )
@@ -1015,13 +1015,13 @@ stardog_reload_db = function (
           csv = paste0(imports[i],".csv"),
           sms = paste0(imports[i],".sms"),
           endpoint= endpoint,
-          db = db[[i]],
+          db = db[[d]],
           Username = Username
         )
       }
     }
     done_time = timestamp(quiet = T)
-    cat("Reloading", db[[i]], "finished at", done_time, "\n")
+    cat("Reloading", db[[d]], "finished at", done_time, "\n")
 
   }
 }
