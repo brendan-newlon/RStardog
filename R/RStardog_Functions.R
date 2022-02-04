@@ -990,6 +990,13 @@ stardog_reload_db = function (
     cat("Reloading", db[[d]], "started at ", start_time, "\n")
 
     if(rdf_data_file != ""){
+      stardog_add_namespaces(
+        endpoint = endpoint,
+        db = db[[d]] ,
+        Username = Username,
+        input_file = file.path(directory, rdf_data_file)
+      )
+
       stardog_data_add (
         directory = directory,
         data_file = rdf_data_file,
