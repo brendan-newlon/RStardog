@@ -388,6 +388,56 @@ handle_keys <-function (con_service = con_service, Username = "", clear_keys = F
 }
 
 
+
+# stardog
+#'
+#' @param server
+#' @param endpoint
+#' @param db
+#' @param graph
+#' @param query
+#' @param reasoning
+#' @param Username
+#' @param include_namespaces
+#' @param clear_keys
+#' @export
+#'
+stardog = function(
+  server = "My_Localhost",
+  endpoint = "http://localhost:5820",
+  db = "",
+  graph = "",  ## ----- (!) May not be implemented correctly. I usually leave this "" and use FROM NAMED or GRAPH within the query text instead.
+  query = 'select * {?s ?p ?o} limit 10',
+  reasoning = F,
+  Username = "admin",
+  include_namespaces = F,
+  clear_keys = F
+){
+  con_service = paste0("stardog_",server)
+  handle_keys(con_service = con_service, Username = Username, clear_keys = clear_keys, as_password = F)
+  sd_url = paste0(endpoint, paste0("/", db,graph, "/query/") %>% gsub("//","/",.))
+  if(reasoning){sd_url = paste0(sd_url, "reasoning/")}
+  sparql.result <- SPARQL(
+    url = sd_url,
+    query =  query,
+    curl_args=c('userpwd'=paste0(Username,':',key_get(service = con_service, username = Username)))
+  )
+  if(!include_namespaces) { sparql.result = sparql.result %>% .[["results"]]}
+  sparql.result
+}
+
+
+
+#
+# test_localhost = stardog(
+# query = 'select * {?s ?p ?o} limit 10',
+#   # server = "My_Localhost",
+#   # endpoint = "http://localhost:5820",
+#   db = "stardog-tutorial-music",
+#   Username = "admin"
+#   )
+
+
 #' stardog_
 #'
 #' stardog_ = function(q = query, d = db, g = graph, U = Username, e = endpoint){
@@ -1004,7 +1054,7 @@ stardog_reload_db = function (
         endpoint = endpoint,
         Username = Username ,
         file_format = rdf_data_file_format,
-        remove_all = remove_all  ##------------------------------- clean slate
+        remove_all = remove_all
       )
     }
 
